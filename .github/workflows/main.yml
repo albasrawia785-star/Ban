@@ -15,7 +15,6 @@ jobs:
 
       - name: Pre-Clean Conflicting Configurations
         run: |
-          # حذف أي ملفات إعدادات قديمة مسبقاً لمنع خطأ الـ init نهائياً
           rm -rf capacitor.config.ts capacitor.config.json
 
       - name: Unzip Project Files
@@ -24,7 +23,6 @@ jobs:
           TARGET_DIR=$(find temp_unzip -name "package.json" -exec dirname {} \;)
           if [ -n "$TARGET_DIR" ]; then
             echo "Found project files in: $TARGET_DIR"
-            # إحاطة المسار بعلامات اقتباس ثنائية لحل مشكلة المسافات والمجلدات العربية
             cp -r "$TARGET_DIR"/* .
           else
             echo "Error: package.json not found!"
@@ -32,41 +30,39 @@ jobs:
           fi
           rm -rf temp_unzip
 
-      - name: Auto-Patch React Code for Capacitor Share & Filesystem (via Node)
+      - name: Auto-Patch React Code for Share & Bluetooth LE Printer (via Node)
         run: |
           node -e "
           const fs = require('fs');
           const path = require('path');
 
-          function findTargetFile(dir, words) {
+          function findTargetFiles(dir, words, foundFiles = []) {
             const files = fs.readdirSync(dir);
             for (const file of files) {
               const fullPath = path.join(dir, file);
               const stat = fs.statSync(fullPath);
               if (stat.isDirectory()) {
-                const found = findTargetFile(fullPath, words);
-                if (found) return found;
+                findTargetFiles(fullPath, words, foundFiles);
               } else if (stat.isFile() && /\.(js|jsx|ts|tsx)$/.test(file)) {
                 const content = fs.readFileSync(fullPath, 'utf8');
                 if (words.some(word => content.includes(word))) {
-                  return fullPath;
+                  foundFiles.push(fullPath);
                 }
               }
             }
-            return null;
+            return foundFiles;
           }
 
-          const targetFile = findTargetFile('src', ['تم تصدير', 'تصدير ومشاركة', 'download']);
-
-          if (targetFile) {
-            console.log('Found Target File:', targetFile);
+          // 1. معالجة وتعديل ملف مشاركة النسخ الاحتياطية (SettingsScreen)
+          const shareFiles = findTargetFiles('src', ['تم تصدير', 'تصدير ومشاركة', 'download']);
+          if (shareFiles.length > 0) {
+            const targetFile = shareFiles[0];
+            console.log('Found Share Target File:', targetFile);
             let content = fs.readFileSync(targetFile, 'utf8');
 
-            // 1. إضافة مكتبات Capacitor في بداية الملف
             const imports = 'import { Filesystem, Directory } from \"@capacitor/filesystem\";\nimport { Share } from \"@capacitor/share\";\nimport { Capacitor } from \"@capacitor/core\";\n';
             content = imports + content;
 
-            // 2. دالة المشاركة الذكية لحقنها في الملف بأسلوب كتابة نصوص مستقر وآمن جداً
             const patchCode = [
               '',
               'window.handleCapacitorShare = async (blobOrUrl, fallbackFileName) => {',
@@ -122,22 +118,36 @@ jobs:
             ].join('\n');
 
             content = content + '\n' + patchCode;
-
-            // 3. استبدال طريقة التحميل التقليدية باستدعاء دالتنا الذكية
             content = content.replace(/([a-zA-Z0-9_]*)\.click\(\)/g, (match, p1) => {
               return 'if (window.handleCapacitorShare) { window.handleCapacitorShare(' + p1 + '.href || ' + p1 + ', \"Saydali_Pro_Backup.zip\"); } else { ' + match + ' }';
             });
 
             fs.writeFileSync(targetFile, content, 'utf8');
-            console.log('React Code successfully patched!');
-          } else {
-            console.log('No matching file found to patch.');
+            console.log('React Share Code successfully patched!');
           }
+
+          // 2. معالجة وتعديل أزرار البلوتوث (AddInstallmentCards)
+          const btFiles = findTargetFiles('src', ['اقتران', 'bluetooth', 'طابعة', 'printer']);
+          btFiles.forEach(file => {
+            console.log('Patching Bluetooth interface in file:', file);
+            let content = fs.readFileSync(file, 'utf8');
+
+            // حقن مكتبات البلوتوث في الملف
+            const btImports = 'import { BleClient } from \"@capacitor-community/bluetooth-le\";\nimport { Capacitor } from \"@capacitor/core\";\n';
+            content = btImports + content;
+
+            // استبدال استدعاءات طلب البلوتوث العادية بنسخة كاباسيتور المتوافقة مع أندرويد
+            content = content.replace(/requestDevice\s*\(\s*\{[\s\S]*?\}\s*\)/g, (match) => {
+              return 'requestDevice().then(async (dev) => { if (Capacitor.isNativePlatform()) { await BleClient.initialize(); const nativeDev = await BleClient.requestDevice(); return nativeDev; } return dev; })';
+            });
+
+            fs.writeFileSync(file, content, 'utf8');
+          });
+          console.log('React Bluetooth Patching finished successfully!');
           "
 
       - name: Deep Clean Environment
         run: |
-          # تنظيف شامل للمجلدات والملفات المتعارضة حتى داخل المجلدات الفرعية
           rm -rf node_modules package-lock.json dist android
           find . -name "capacitor.config.ts" -delete
           find . -name "capacitor.config.json" -delete
@@ -151,10 +161,10 @@ jobs:
         run: |
           npm install --force
 
-      - name: Install Capacitor Core & Plugins (Before Build)
+      - name: Install Capacitor Core, Plugins & Bluetooth LE (Before Build)
         run: |
-          # تثبيت مكاتب كاباسيتور أولاً قبل البدء في البناء لحل خطأ الترجمة
-          npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest @capacitor/filesystem@latest @capacitor/share@latest --force
+          # تثبيت مكتبة البلوتوث الخاصة بـ Capacitor لدعم الموبايل والـ WebView
+          npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest @capacitor/filesystem@latest @capacitor/share@latest @capacitor-community/bluetooth-le@latest --force
 
       - name: Build Web Application
         run: npm run build
@@ -167,10 +177,8 @@ jobs:
 
       - name: Configure FileProvider and Bluetooth Permissions
         run: |
-          # 1. إنشاء مجلد xml الخاص بالصلاحيات إذا لم يكن موجوداً
           mkdir -p android/app/src/main/res/xml
           
-          # 2. إنشاء ملف file_paths.xml لكي يسمح للأندرويد بمشاركة الملفات من الكاش والمستندات
           cat << 'EOF' > android/app/src/main/res/xml/file_paths.xml
           <?xml version="1.0" encoding="utf-8"?>
           <paths xmlns:android="http://schemas.android.com/apk/res/android">
@@ -180,17 +188,15 @@ jobs:
           </paths>
           EOF
 
-          # 3. حقن صلاحيات (الكاميرا، التخزين، البلوتوث، والموقع) داخل الـ AndroidManifest.xml
           MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST_PATH" ]; then
             echo "Configuring AndroidManifest with Bluetooth, Location, Camera, and FileProvider permissions..."
             
-            # الصلاحيات المطلوبة للبلوتوث والموقع والكاميرا والتخزين لتشغيل الطابعة ومشاركة الملفات
+            # الصلاحيات الصارمة والمطلوبة أندرويد 12 و 13 و 14 للاتصال بالطابعات والبحث عنها
             PERMISSIONS_BLOCK='    \n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\n    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />\n\n    \n    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />\n    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />\n    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />\n    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />'
             
             sed -i "/<\/manifest>/i $PERMISSIONS_BLOCK" $MANIFEST_PATH
             
-            # حقن الـ FileProvider داخل وسم <application> لتمكين المشاركة الفورية للملفات
             PROVIDER_TAG='<provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" /></provider>'
             sed -i "s|</application>|    $PROVIDER_TAG\n    </application>|" $MANIFEST_PATH
           fi
@@ -218,6 +224,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          # استخدام اسم فريد يعتمد على الـ run_id والـ run_attempt لمنع خطأ الـ 409 Conflict نهائياً
           name: Saydali-Pro-APK-${{ github.run_id }}-${{ github.run_attempt }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
