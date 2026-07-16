@@ -24,7 +24,7 @@ jobs:
           TARGET_DIR=$(find temp_unzip -name "package.json" -exec dirname {} \;)
           if [ -n "$TARGET_DIR" ]; then
             echo "Found project files in: $TARGET_DIR"
-            # إحاطة المسارات بعلامات اقتباس ثنائية لحل مشكلة المسافات في المجلدات العربية
+            # إحاطة المسار بعلامات اقتباس ثنائية لحل مشكلة المسافات والمجلدات العربية
             cp -r "$TARGET_DIR"/* .
           else
             echo "Error: package.json not found!"
@@ -153,6 +153,7 @@ jobs:
 
       - name: Install Capacitor Core & Plugins (Before Build)
         run: |
+          # تثبيت مكاتب كاباسيتور أولاً قبل البدء في البناء لحل خطأ الترجمة
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest @capacitor/filesystem@latest @capacitor/share@latest --force
 
       - name: Build Web Application
@@ -164,7 +165,7 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: Configure FileProvider for Sharing and Backup
+      - name: Configure FileProvider and Bluetooth Permissions
         run: |
           # 1. إنشاء مجلد xml الخاص بالصلاحيات إذا لم يكن موجوداً
           mkdir -p android/app/src/main/res/xml
@@ -179,13 +180,15 @@ jobs:
           </paths>
           EOF
 
-          # 3. حقن الـ FileProvider والصلاحيات داخل الـ AndroidManifest.xml
+          # 3. حقن صلاحيات (الكاميرا، التخزين، البلوتوث، والموقع) داخل الـ AndroidManifest.xml
           MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST_PATH" ]; then
-            echo "Configuring AndroidManifest with permissions and FileProvider..."
+            echo "Configuring AndroidManifest with Bluetooth, Location, Camera, and FileProvider permissions..."
             
-            # حقن صلاحيات الكاميرا والتخزين
-            sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\n    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />' $MANIFEST_PATH
+            # الصلاحيات المطلوبة للبلوتوث والموقع والكاميرا والتخزين لتشغيل الطابعة ومشاركة الملفات
+            PERMISSIONS_BLOCK='    \n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />\n    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />\n\n    \n    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />\n    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />\n    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />\n    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />'
+            
+            sed -i "/<\/manifest>/i $PERMISSIONS_BLOCK" $MANIFEST_PATH
             
             # حقن الـ FileProvider داخل وسم <application> لتمكين المشاركة الفورية للملفات
             PROVIDER_TAG='<provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" /></provider>'
@@ -215,6 +218,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Saydali-Pro-APK
+          # استخدام اسم فريد يعتمد على الـ run_id والـ run_attempt لمنع خطأ الـ 409 Conflict نهائياً
+          name: Saydali-Pro-APK-${{ github.run_id }}-${{ github.run_attempt }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
-          overwrite: true
