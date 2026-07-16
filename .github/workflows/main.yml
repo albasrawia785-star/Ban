@@ -24,7 +24,8 @@ jobs:
           TARGET_DIR=$(find temp_unzip -name "package.json" -exec dirname {} \;)
           if [ -n "$TARGET_DIR" ]; then
             echo "Found project files in: $TARGET_DIR"
-            cp -r $TARGET_DIR/* .
+            # إحاطة المسارات بعلامات اقتباس ثنائية لحل مشكلة المسافات في المجلدات العربية
+            cp -r "$TARGET_DIR"/* .
           else
             echo "Error: package.json not found!"
             exit 1
@@ -152,7 +153,6 @@ jobs:
 
       - name: Install Capacitor Core & Plugins (Before Build)
         run: |
-          # قمنا بتقديم هذه الخطوة لكي يتمكن المترجم من العثور على المكاتب المحقونة أثناء الـ build
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest @capacitor/filesystem@latest @capacitor/share@latest --force
 
       - name: Build Web Application
