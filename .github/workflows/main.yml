@@ -1,11 +1,3 @@
-أهلاً بك يا صديقي، سبب هذا الخطأ ذكي جداً ولكنه بسيط:
-لقد قمنا بحقن مكاتب Capacitor (@capacitor/filesystem و @capacitor/share) داخل ملف الـ React في خطوة الـ Auto-Patch، ولكن عملية بناء الويب (npm run build) تبدأ قبل خطوة تثبيت مكاتب Capacitor!
-لذا عندما حاول الـ Compiler (Vite) بناء تطبيق الويب، تفاجأ بوجود استيراد لمكتبات لم يتم تثبيتها بعد في مجلد node_modules ففشل البناء فوراً مع رسالة:
-> Rollup failed to resolve import "@capacitor/filesystem"
-> 
-الحل:
-كل ما نحتاجه هو تقديم خطوة تثبيت مكاتب Capacitor لتكون قبل خطوة بناء الويب (npm run build)، وبذلك سيتعرف عليها الـ Compiler ويبني التطبيق بنجاح كامل وبدون أي اعتراض.
-إليك كود الـ Workflow الكامل والمصحح بترتيب الخطوات الصحيح:
 name: Build Android APK
 
 on:
@@ -226,4 +218,3 @@ jobs:
           name: Saydali-Pro-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           overwrite: true
-
